@@ -1,6 +1,27 @@
 require 'fuzzy'
+require 'json'
 
 class SSH
+  class ITerm2
+    attr_accessor :tab_id, :command, :host
+
+    def initialize(options)
+      @tab_id = options['tab_id']
+      @command = options['command']
+      @host = @command.scan(/\S+$/).first
+    end
+
+    class << self
+      def get_tab_commands
+        @tab_commands ||= JSON.parse(`curl -s http://localhost:28082 -d "get_tab_commands()"`).each_with_object({}) { |t, result|
+          tab = new(t)
+          result[tab.host] = tab
+        }
+      end
+    end
+  end
+
+  # Depracated
   class Process
 
     attr_accessor :uid, :pid, :ppid, :tty, :name, :host
@@ -54,14 +75,18 @@ class SSH
 
   class Config
 
-    attr_accessor :host
+    attr_accessor :host, :iterm2_tab
 
     def initialize(host)
       @host = host
     end
 
+    def iterm2_tab
+      @iterm2_tab ||= ITerm2.get_tab_commands[host]
+    end
+
     def status
-      SSH::Process.all_processes[host] ? 'on' : 'off'
+      @status ||= iterm2_tab ? 'on' : 'off'
     end
 
     def icon
@@ -73,7 +98,8 @@ class SSH
     end
 
     def alfred_arg
-      "start #{@host}"
+      tab = iterm2_tab ? iterm2_tab.tab_id : ''
+      "ssh #{status == 'on' ? 'show' : 'start'} #{@host} #{tab}"
     end
 
     class << self
@@ -101,7 +127,7 @@ class SSH
   end
 
   def list(*args)
-    print Config.select_by_host(args[0].strip).each_with_object(Alfred::Workflow.new) { |config, workflow|
+    print Config.select_by_host(args[0].strip).sort_by(&:status).reverse.each_with_object(Alfred::Workflow.new) { |config, workflow|
       workflow.result
         .uid(config.host)
         .title(config.host)
@@ -111,8 +137,16 @@ class SSH
     }.output
   end
 
-  def start(args)
-    puts Config.find_by_host(args[0]).start!
+  def start(host, *args)
+    system <<-EOF
+    curl -s http://127.0.0.1:28082 -d "run_ssh(host: \\"#{host}\\")" &> /dev/null
+    EOF
+  end
+
+  def show(host, tab_id)
+    system <<-EOF
+    curl -s http://127.0.0.1:28082 -d "activate_tab_by_id(tab_id: \\"#{tab_id}\\")" &> /dev/null
+    EOF
   end
 
   def run(command, *args)
