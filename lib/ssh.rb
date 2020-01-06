@@ -8,7 +8,7 @@ class SSH
     def initialize(options)
       @tab_id = options['tab_id']
       @command = options['command']
-      @host = @command.scan(/\S+$/).first
+      @host = @command.scan(/\S+/)[1]&.delete("\\")
     end
 
     class << self
