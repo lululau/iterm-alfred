@@ -8,7 +8,12 @@ class SSH
     def initialize(options)
       @tab_id = options['tab_id']
       @command = options['command']
-      @host = @command.scan(/\S+/)[1]&.delete("\\")
+      if @command.include?(' nc ')
+        process = Process.find_by_pid(options['pid'].to_s)
+        @host = Process.find_by_pid(process.ppid).host
+      else
+        @host = @command.scan(/\S+/)[1]&.delete("\\")
+      end
     end
 
     class << self
